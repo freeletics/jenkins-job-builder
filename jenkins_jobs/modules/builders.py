@@ -3201,6 +3201,9 @@ def docker_build_publish(parse, xml_parent, data):
 
     :arg str repo-name: Name of repository to push to.
     :arg str repo-tag: Tag for image. (default '')
+    :arg dict registry: Registry to push to
+        * **url** (str) repository url to use (optional)
+        * **credentials-id** (str): ID of credentials to use to connect
     :arg bool no-cache: If build should be cached. (default false)
     :arg bool no-force-pull: Don't update the source image before building when
         it exists locally. (default false)
@@ -3208,6 +3211,10 @@ def docker_build_publish(parse, xml_parent, data):
     :arg bool skip-decorate: Do not decorate the build name. (default false)
     :arg bool skip-tag-latest: Do not tag this build as latest. (default false)
     :arg bool skip-push: Do not push. (default false)
+    :arg str build-context: Project root path for the build, defaults to the
+        workspace if not specified. (default '')
+    :arg str build-additional-args: Additional build arguments passed to docker
+        build such as --build-arg https_proxy="http://some.proxy:port" (default '')
     :arg str file-path: Project root of Dockerfile. (default '')
 
     Example:
@@ -3222,6 +3229,17 @@ def docker_build_publish(parse, xml_parent, data):
         XML.SubElement(db, 'repoName').text = str(data['repo-name'])
     except KeyError:
         raise MissingAttributeError('repo-name')
+
+    if 'registry' in data:
+        registryData = data['registry']
+        registry = XML.SubElement(db, 'registry')
+        registry.set('plugin', 'docker-commons')
+        if 'url' in registryData:
+            url = registryData['url']
+            XML.SubElement(registry, 'url').text = str(url)
+        if 'credentials-id' in registryData:
+            credentialsId = registryData['credentials-id']
+            XML.SubElement(registry, 'credentialsId').text = str(credentialsId)
 
     XML.SubElement(db, 'repoTag').text = str(data.get('repo-tag', ''))
     XML.SubElement(db, 'noCache').text = str(
@@ -3238,7 +3256,10 @@ def docker_build_publish(parse, xml_parent, data):
         data.get('skip-push', False)).lower()
     XML.SubElement(db, 'dockerfilePath').text = str(
         data.get('file-path', ''))
-
+    XML.SubElement(db, 'buildContext').text = str(
+        data.get('build-context', ''))
+    XML.SubElement(db, 'buildAdditionalArgs').text = str(
+        data.get('build-additional-args', ''))
 
 def build_name_setter(parser, xml_parent, data):
     """yaml: build-name-setter
