@@ -917,6 +917,7 @@ def inject(parser, xml_parent, data):
     :arg str properties-content: key value pair of properties (default '')
     :arg str script-file: path to the script file (default '')
     :arg str script-content: contents of a script (default '')
+    :arg str groovy-script-content: contents of a groovy script (default '')
 
     Example::
 
@@ -937,6 +938,8 @@ def inject(parser, xml_parent, data):
         info, 'scriptFilePath', data.get('script-file'))
     jenkins_jobs.modules.base.add_nonblank_xml_subelement(
         info, 'scriptContent', data.get('script-content'))
+    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
+        info, 'groovyScriptContent', data.get('groovy-script-content'))
     XML.SubElement(info, 'loadFilesFromMaster').text = 'false'
 
 
