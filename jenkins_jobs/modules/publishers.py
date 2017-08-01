@@ -6145,6 +6145,55 @@ def github_pull_request_merge(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping)
 
 
+def newrelic_deployment_notifier(parse, xml_parent, data):
+    """yaml: newrelic-deployment-notifier
+    Requires the Jenkins :jenkins-wiki`New Relic Deployment Notifier Plugin
+    <New+Relic+Deployment+Notifier+Plugin>`.
+
+    :arg list notification: list of notification deployments
+
+        :Notification:
+            * **api-key** (`str`) -- Deployment notification requires an API key.
+            * **application-id** (`str`) -- Application to register deployment for..
+            * **description** (`str`) -- Text annotation for the deployment (default '') 
+            * **revision** (`str`) -- The revision number from your source 
+                control system (default '')
+            * **changelog** (`str`) -- A list of changes for this deployment (default '')
+            * **user** (`str`) -- The name of the user/process that triggered this deployment
+              (default '')
+
+    Example:
+    .. literalinclude::
+        ../../tests/builders/fixtures/newrelic-notifier.yaml
+       :language: yaml  
+    """
+
+    newrelic_notifier = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.newrelicnotifier.NewRelicDeploymentNotifier')
+    newrelic_notifier.set('plugin', 'newrelic-deployment-notifier')
+    client = XML.SubElement(newrelic_notifier, 'client')
+    client.set('class', 'org.jenkinsci.plugins.newrelicnotifier.api.NewRelicClientImpl')
+    xml_notifications = XML.SubElement(newrelic_notifier, 'notifications')
+
+    notifications = data.get('notifications', [])
+    for notification in notifications:
+        xml_notification = XML.SubElement(xml_notifications,
+         'org.jenkinsci.plugins.newrelicnotifier.DeploymentNotificationBean')
+        XML.SubElement(xml_notification, 'apiKey').text = str(
+            notification.get('api-key', ''))
+        XML.SubElement(xml_notification, 'applicationId').text = str(
+            notification.get('application-id', ''))
+        XML.SubElement(xml_notification, 'description').text = str(
+            notification.get('description', ''))
+        XML.SubElement(xml_notification, 'revision').text = str(
+            notification.get('revision', ''))
+        XML.SubElement(xml_notification, 'changelog').text = str(
+            notification.get('changelog', ''))
+        XML.SubElement(xml_notification, 'user').text = str(
+            notification.get('user', ''))
+
+
 class Publishers(jenkins_jobs.modules.base.Base):
     sequence = 70
 
