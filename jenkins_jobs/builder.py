@@ -144,7 +144,7 @@ class Jenkins(object):
     def jobs(self):
         if self._jobs is None:
             # populate jobs
-            self._jobs = self.jenkins.get_jobs()
+            self._jobs = self.jenkins.get_jobs(folder_depth=None)
 
         return self._jobs
 
