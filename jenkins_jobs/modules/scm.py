@@ -1264,4 +1264,4 @@ class PipelineSCM(jenkins_jobs.modules.base.Base):
                                                           'Jenkinsfile')
             else:
                 raise JenkinsJobsException('Only one SCM can be specified '
-                                           'as pipeline-scm'
+                                           'as pipeline-scm')
