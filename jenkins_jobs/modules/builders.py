@@ -3810,6 +3810,8 @@ def docker_build_publish(parse, xml_parent, data):
     :arg str file-path: Path of the Dockerfile. (default '')
     :arg str build-context: Project root path for the build, defaults to the
         workspace if not specified. (default '')
+    :arg str build-additional-args: Additional build arguments passed to docker
+        build command. (default '')
 
     Minimal example:
 
@@ -3834,6 +3836,7 @@ def docker_build_publish(parse, xml_parent, data):
         ('skip-push', 'skipPush', False),
         ('file-path', 'dockerfilePath', ''),
         ('build-context', 'buildContext', ''),
+        ('build-additional-args', 'buildAdditionalArgs', ''),
     ]
     convert_mapping_to_xml(db, data, mapping, fail_required=True)
 
