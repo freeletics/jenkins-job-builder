@@ -1,0 +1,9 @@
+publishers:
+  - newrelic-deployment-notifier:
+      notifications:
+        - api-key: api-key
+          application-id: application-id
+          description: description
+          revision: revision
+          changelog: changelog
+          user: user
