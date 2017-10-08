@@ -69,7 +69,7 @@ class JenkinsManager(object):
     def jobs(self):
         if self._jobs is None:
             # populate jobs
-            self._jobs = self.jenkins.get_jobs()
+            self._jobs = self.jenkins.get_all_jobs()
 
         return self._jobs
 
@@ -154,17 +154,17 @@ class JenkinsManager(object):
         if keep is None:
             keep = []
         for job in jobs:
-            if job['name'] not in keep:
-                if self.is_managed(job['name']):
+            if job['fullname'] not in keep:
+                if self.is_managed(job['fullname']):
                     logger.info("Removing obsolete jenkins job {0}"
-                                .format(job['name']))
-                    self.delete_job(job['name'])
+                                .format(job['fullname']))
+                    self.delete_job(job['fullname'])
                     deleted_jobs += 1
                 else:
                     logger.info("Not deleting unmanaged jenkins job %s",
-                                job['name'])
+                                job['fullname'])
             else:
-                logger.debug("Keeping job %s", job['name'])
+                logger.debug("Keeping job %s", job['fullname'])
         return deleted_jobs
 
     def delete_jobs(self, jobs):
