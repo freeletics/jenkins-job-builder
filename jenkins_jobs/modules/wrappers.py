@@ -919,6 +919,11 @@ def inject(registry, xml_parent, data):
     :arg str properties-content: key value pair of properties (optional)
     :arg str script-file: path to the script file (optional)
     :arg str script-content: contents of a script (optional)
+    :arg dict evaluated-groovy-script: Evaluates a Groovy script and injects
+        the results into the environment
+        * **script** (str): groovy script content. (optional)
+        * **sandbox** (bool): run Groovy script in a sandbox with limited
+            abilities. (default false)
     :arg bool load-from-master: load files from master (default false)
 
     Example::
@@ -931,6 +936,7 @@ def inject(registry, xml_parent, data):
             script-content: echo $PATH
     """
     eib = XML.SubElement(xml_parent, 'EnvInjectBuildWrapper')
+    eib.set('plugin', 'envinject')
     info = XML.SubElement(eib, 'info')
     mapping = [
         ('properties-file', 'propertiesFilePath', None),
@@ -940,6 +946,19 @@ def inject(registry, xml_parent, data):
         ('load-from-master', 'loadFilesFromMaster', False),
     ]
     convert_mapping_to_xml(info, data, mapping, fail_required=False)
+
+    mapping = []
+    if 'evaluated-groovy-script' in data:
+        evaluated_groovy_script = XML.SubElement(info, 'secureGroovyScript')
+        evaluated_groovy_script.set('plugin', 'script-security')
+        evaluated_groovy_script_data = data['evaluated-groovy-script']
+        if 'script' in evaluated_groovy_script_data:
+            mapping.append(('script', 'script', None))
+
+        if 'sandbox' in evaluated_groovy_script_data:
+            mapping.append(('sandbox', 'sandbox', False))
+        convert_mapping_to_xml(
+            evaluated_groovy_script, evaluated_groovy_script_data, mapping, fail_required=False)
 
 
 def inject_ownership_variables(registry, xml_parent, data):
