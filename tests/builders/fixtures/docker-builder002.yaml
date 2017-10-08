@@ -10,6 +10,7 @@ builders:
         skip-tag: false
         file-path: '/tmp/'
         build-context: '/tmp/'
+        build-additional-args: '--build-arg arg1="val1"'
         registry:
             url: 'https://registry.example.org'
             credentials-id: 'registry-docker'
