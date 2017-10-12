@@ -37,7 +37,10 @@ Example::
 """
 
 import logging
+import sys
 import xml.etree.ElementTree as XML
+
+import six
 
 from jenkins_jobs.errors import is_sequence
 from jenkins_jobs.errors import InvalidAttributeError
@@ -64,16 +67,36 @@ def shell(registry, xml_parent, data):
     """yaml: shell
     Execute a shell command.
 
+    There are two ways of configuring the builder, with a plain string to
+    execute:
+
     :arg str parameter: the shell command to execute
+
+    Or with a mapping that allows other parameters to be passed:
+
+    :arg str command: the shell command to execute
+    :arg int unstable-return:
+        the shell exit code to interpret as an unstable build result
 
     Example:
 
     .. literalinclude:: /../../tests/builders/fixtures/shell.yaml
        :language: yaml
 
+    .. literalinclude::
+        /../../tests/builders/fixtures/shell-unstable-return.yaml
+       :language: yaml
     """
     shell = XML.SubElement(xml_parent, 'hudson.tasks.Shell')
-    XML.SubElement(shell, 'command').text = data
+    if isinstance(data, six.string_types):
+        XML.SubElement(shell, 'command').text = data
+    else:
+        mappings = [
+            ('command', 'command', None),
+            ('unstable-return', 'unstableReturn', 0),
+
+        ]
+        convert_mapping_to_xml(shell, data, mappings, fail_required=True)
 
 
 def python(registry, xml_parent, data):
@@ -539,19 +562,20 @@ def trigger_builds(registry, xml_parent, data):
             params = XML.SubElement(tconfigs,
                                     'hudson.plugins.parameterizedtrigger.'
                                     'FileBuildParameters')
-            propertiesFile = XML.SubElement(params, 'propertiesFile')
-            propertiesFile.text = project_def['property-file']
-            failTriggerOnMissing = XML.SubElement(params,
-                                                  'failTriggerOnMissing')
-            failTriggerOnMissing.text = str(project_def.get(
-                'property-file-fail-on-missing', True)).lower()
+            mapping = [
+                ('property-file', 'propertiesFile', None),
+                ('property-file-fail-on-missing',
+                    'failTriggerOnMissing', True)]
+            convert_mapping_to_xml(params,
+                project_def, mapping, fail_required=True)
 
         if 'predefined-parameters' in project_def:
             params = XML.SubElement(tconfigs,
                                     'hudson.plugins.parameterizedtrigger.'
                                     'PredefinedBuildParameters')
-            properties = XML.SubElement(params, 'properties')
-            properties.text = project_def['predefined-parameters']
+            mapping = [('predefined-parameters', 'properties', None)]
+            convert_mapping_to_xml(params,
+                project_def, mapping, fail_required=True)
 
         if 'bool-parameters' in project_def:
             params = XML.SubElement(tconfigs,
@@ -562,23 +586,29 @@ def trigger_builds(registry, xml_parent, data):
                 param = XML.SubElement(configs,
                                        'hudson.plugins.parameterizedtrigger.'
                                        'BooleanParameterConfig')
-                XML.SubElement(param, 'name').text = str(bool_param['name'])
-                XML.SubElement(param, 'value').text = str(
-                    bool_param.get('value', False)).lower()
+                mapping = [
+                    ('name', 'name', None),
+                    ('value', 'value', False)]
+                convert_mapping_to_xml(param,
+                    bool_param, mapping, fail_required=True)
 
         if 'node-label-name' in project_def and 'node-label' in project_def:
             node = XML.SubElement(tconfigs, 'org.jvnet.jenkins.plugins.'
                                   'nodelabelparameter.parameterizedtrigger.'
                                   'NodeLabelBuildParameter')
-            XML.SubElement(node, 'name').text = project_def['node-label-name']
-            XML.SubElement(node, 'nodeLabel').text = project_def['node-label']
+            mapping = [
+                ('node-label-name', 'name', None),
+                ('node-label', 'nodeLabel', None)]
+            convert_mapping_to_xml(node,
+                project_def, mapping, fail_required=True)
 
         if 'restrict-matrix-project' in project_def:
             params = XML.SubElement(tconfigs,
                                     'hudson.plugins.parameterizedtrigger.'
                                     'matrix.MatrixSubsetBuildParameters')
-            XML.SubElement(params, 'filter').text = project_def[
-                'restrict-matrix-project']
+            mapping = [('restrict-matrix-project', 'filter', None)]
+            convert_mapping_to_xml(params,
+                project_def, mapping, fail_required=True)
 
         if(len(list(tconfigs)) == 0):
             tconfigs.set('class', 'java.util.Collections$EmptyList')
@@ -609,60 +639,47 @@ def trigger_builds(registry, xml_parent, data):
                         fconfigs,
                         'hudson.plugins.parameterizedtrigger.'
                         'BinaryFileParameterFactory')
-                    parameterName = XML.SubElement(params, 'parameterName')
-                    parameterName.text = factory['parameter-name']
+                    mapping = [('parameter-name', 'parameterName', None)]
+                    convert_mapping_to_xml(params,
+                        factory, mapping, fail_required=True)
+
                 if (factory['factory'] == 'filebuild' or
                         factory['factory'] == 'binaryfile'):
-                    filePattern = XML.SubElement(params, 'filePattern')
-                    filePattern.text = factory['file-pattern']
-                    noFilesFoundAction = XML.SubElement(
-                        params,
-                        'noFilesFoundAction')
-                    noFilesFoundActionValue = str(factory.get(
-                        'no-files-found-action', 'SKIP'))
-                    if noFilesFoundActionValue not in supported_actions:
-                        raise InvalidAttributeError('no-files-found-action',
-                                                    noFilesFoundActionValue,
-                                                    supported_actions)
-                    noFilesFoundAction.text = noFilesFoundActionValue
+                    mapping = [
+                        ('file-pattern', 'filePattern', None),
+                        ('no-files-found-action',
+                            'noFilesFoundAction', 'SKIP', supported_actions)]
+                    convert_mapping_to_xml(params,
+                        factory, mapping, fail_required=True)
+
                 if factory['factory'] == 'counterbuild':
                     params = XML.SubElement(
                         fconfigs,
                         'hudson.plugins.parameterizedtrigger.'
                         'CounterBuildParameterFactory')
-                    fromProperty = XML.SubElement(params, 'from')
-                    fromProperty.text = str(factory['from'])
-                    toProperty = XML.SubElement(params, 'to')
-                    toProperty.text = str(factory['to'])
-                    stepProperty = XML.SubElement(params, 'step')
-                    stepProperty.text = str(factory['step'])
-                    paramExpr = XML.SubElement(params, 'paramExpr')
-                    paramExpr.text = str(factory.get(
-                        'parameters', ''))
-                    validationFail = XML.SubElement(params, 'validationFail')
-                    validationFailValue = str(factory.get(
-                        'validation-fail', 'FAIL'))
-                    if validationFailValue not in supported_actions:
-                        raise InvalidAttributeError('validation-fail',
-                                                    validationFailValue,
-                                                    supported_actions)
-                    validationFail.text = validationFailValue
+                    mapping = [('from', 'from', None),
+                               ('to', 'to', None),
+                               ('step', 'step', None),
+                               ('parameters', 'paramExpr', ''),
+                               ('validation-fail',
+                                   'validationFail',
+                                   'FAIL', supported_actions)]
+                    convert_mapping_to_xml(params,
+                        factory, mapping, fail_required=True)
+
                 if factory['factory'] == 'allnodesforlabel':
                     params = XML.SubElement(
                         fconfigs,
                         'org.jvnet.jenkins.plugins.nodelabelparameter.'
                         'parameterizedtrigger.'
                         'AllNodesForLabelBuildParameterFactory')
-                    nameProperty = XML.SubElement(params, 'name')
-                    nameProperty.text = str(factory.get(
-                        'name', ''))
-                    nodeLabel = XML.SubElement(params, 'nodeLabel')
-                    nodeLabel.text = str(factory['node-label'])
-                    ignoreOfflineNodes = XML.SubElement(
-                        params,
-                        'ignoreOfflineNodes')
-                    ignoreOfflineNodes.text = str(factory.get(
-                        'ignore-offline-nodes', True)).lower()
+                    mapping = [('name', 'name', ''),
+                               ('node-label', 'nodeLabel', None),
+                               ('ignore-offline-nodes',
+                                   'ignoreOfflineNodes', True)]
+                    convert_mapping_to_xml(params,
+                        factory, mapping, fail_required=True)
+
                 if factory['factory'] == 'allonlinenodes':
                     params = XML.SubElement(
                         fconfigs,
@@ -676,14 +693,11 @@ def trigger_builds(registry, xml_parent, data):
         else:
             projects.text = project_def['project']
 
-        condition = XML.SubElement(tconfig, 'condition')
-        condition.text = 'ALWAYS'
-        trigger_with_no_params = XML.SubElement(tconfig,
-                                                'triggerWithNoParameters')
-        trigger_with_no_params.text = 'false'
-        build_all_nodes_with_label = XML.SubElement(tconfig,
-                                                    'buildAllNodesWithLabel')
-        build_all_nodes_with_label.text = 'false'
+        mapping = [('', 'condition', 'ALWAYS'),
+                   ('', 'triggerWithNoParameters', False),
+                   ('', 'buildAllNodesWithLabel', False)]
+        convert_mapping_to_xml(tconfig, {}, mapping, fail_required=True)
+
         block = project_def.get('block', False)
         if block:
             block = XML.SubElement(tconfig, 'block')
@@ -711,13 +725,13 @@ def trigger_builds(registry, xml_parent, data):
                                                 tvalue,
                                                 supported_threshold_values)
                 th = XML.SubElement(block, txmltag)
-                XML.SubElement(th, 'name').text = hudson_model.THRESHOLDS[
-                    tvalue.upper()]['name']
-                XML.SubElement(th, 'ordinal').text = hudson_model.THRESHOLDS[
-                    tvalue.upper()]['ordinal']
-                XML.SubElement(th, 'color').text = hudson_model.THRESHOLDS[
-                    tvalue.upper()]['color']
-                XML.SubElement(th, 'completeBuild').text = "true"
+                mapping = [('name', 'name', None),
+                           ('ordinal', 'ordinal', None),
+                           ('color', 'color', None),
+                           ('', 'completeBuild', True)]
+                convert_mapping_to_xml(th,
+                hudson_model.THRESHOLDS[tvalue.upper()],
+                mapping, fail_required=True)
 
     # If configs is empty, remove the entire tbuilder tree.
     if(len(configs) == 0):
@@ -2623,67 +2637,57 @@ def cmake(registry, xml_parent, data):
     """
 
     BUILD_TYPES = ['Debug', 'Release', 'RelWithDebInfo', 'MinSizeRel']
-
     cmake = XML.SubElement(xml_parent, 'hudson.plugins.cmake.CmakeBuilder')
 
-    source_dir = XML.SubElement(cmake, 'sourceDir')
-    try:
-        source_dir.text = data['source-dir']
-    except KeyError:
-        raise MissingAttributeError('source-dir')
+    mapping = [
+        ('source-dir', 'sourceDir', None),  # Required parameter
+        ('generator', 'generator', "Unix Makefiles"),
+        ('clean-build-dir', 'cleanBuild', False),
+    ]
+    helpers.convert_mapping_to_xml(cmake, data, mapping, fail_required=True)
 
-    XML.SubElement(cmake, 'generator').text = str(
-        data.get('generator', "Unix Makefiles"))
+    info = registry.get_plugin_info("CMake plugin")
+    # Note: Assume latest version of plugin is preferred config format
+    version = pkg_resources.parse_version(
+        info.get("version", str(sys.maxsize)))
 
-    XML.SubElement(cmake, 'cleanBuild').text = str(
-        data.get('clean-build-dir', False)).lower()
-
-    plugin_info = registry.get_plugin_info("CMake plugin")
-    version = pkg_resources.parse_version(plugin_info.get("version", "1.0"))
-
-    # Version 2.x breaks compatibility. So parse the input data differently
-    # based on it:
     if version >= pkg_resources.parse_version("2.0"):
-        if data.get('preload-script'):
-            XML.SubElement(cmake, 'preloadScript').text = str(
-                data.get('preload-script', ''))
-
-        XML.SubElement(cmake, 'workingDir').text = str(
-            data.get('working-dir', ''))
-
-        XML.SubElement(cmake, 'buildType').text = str(
-            data.get('build-type', 'Debug'))
-
-        XML.SubElement(cmake, 'installationName').text = str(
-            data.get('installation-name', 'InSearchPath'))
-
-        XML.SubElement(cmake, 'toolArgs').text = str(
-            data.get('other-arguments', ''))
+        mapping_20 = [
+            ('preload-script', 'preloadScript', None),  # Optional parameter
+            ('working-dir', 'workingDir', ''),
+            ('build-type', 'buildType', 'Debug'),
+            ('installation-name', 'installationName', 'InSearchPath'),
+            ('other-arguments', 'toolArgs', ''),
+        ]
+        helpers.convert_mapping_to_xml(
+            cmake, data, mapping_20, fail_required=False)
 
         tool_steps = XML.SubElement(cmake, 'toolSteps')
 
         for step_data in data.get('build-tool-invocations', []):
-            tagname = 'hudson.plugins.cmake.BuildToolStep'
-            step = XML.SubElement(tool_steps, tagname)
-
-            XML.SubElement(step, 'withCmake').text = str(
-                step_data.get('use-cmake', False)).lower()
-
-            XML.SubElement(step, 'args').text = str(
-                step_data.get('arguments', ''))
-
-            XML.SubElement(step, 'vars').text = str(
-                step_data.get('environment-variables', ''))
+            step = XML.SubElement(
+                tool_steps, 'hudson.plugins.cmake.BuildToolStep')
+            step_mapping = [
+                ('use-cmake', 'withCmake', False),
+                ('arguments', 'args', ''),
+                ('environment-variables', 'vars', ''),
+            ]
+            helpers.convert_mapping_to_xml(
+                step, step_data, step_mapping, fail_required=True)
 
     else:
-        XML.SubElement(cmake, 'preloadScript').text = str(
-            data.get('preload-script', ''))
-
-        build_dir = XML.SubElement(cmake, 'buildDir')
-        build_dir.text = data.get('build-dir', '')
-
-        install_dir = XML.SubElement(cmake, 'installDir')
-        install_dir.text = data.get('install-dir', '')
+        mapping_10 = [
+            ('preload-script', 'preloadScript', ''),
+            ('build-dir', 'buildDir', ''),
+            ('install-dir', 'installDir', ''),
+            ('make-command', 'makeCommand', 'make'),
+            ('install-command', 'installCommand', 'make install'),
+            ('other-arguments', 'cmakeArgs', ''),
+            ('custom-cmake-path', 'projectCmakePath', ''),
+            ('clean-install-dir', 'cleanInstallDir', False),
+        ]
+        helpers.convert_mapping_to_xml(
+            cmake, data, mapping_10, fail_required=True)
 
         # The options buildType and otherBuildType work together on the CMake
         # plugin:
@@ -2697,30 +2701,13 @@ def cmake(registry, xml_parent, data):
         # option, so this was done to simplify it for the JJB user.
         build_type = XML.SubElement(cmake, 'buildType')
         build_type.text = data.get('build-type', BUILD_TYPES[0])
-
         other_build_type = XML.SubElement(cmake, 'otherBuildType')
 
-        if(build_type.text not in BUILD_TYPES):
+        if build_type.text not in BUILD_TYPES:
             other_build_type.text = build_type.text
             build_type.text = BUILD_TYPES[0]
         else:
             other_build_type.text = ''
-
-        make_command = XML.SubElement(cmake, 'makeCommand')
-        make_command.text = data.get('make-command', 'make')
-
-        install_command = XML.SubElement(cmake, 'installCommand')
-        install_command.text = data.get('install-command', 'make install')
-
-        other_cmake_args = XML.SubElement(cmake, 'cmakeArgs')
-        other_cmake_args.text = data.get('other-arguments', '')
-
-        custom_cmake_path = XML.SubElement(cmake, 'projectCmakePath')
-        custom_cmake_path.text = data.get('custom-cmake-path', '')
-
-        clean_install_dir = XML.SubElement(cmake, 'cleanInstallDir')
-        clean_install_dir.text = str(data.get('clean-install-dir',
-                                              False)).lower()
 
         # The plugin generates this tag, but there doesn't seem to be anything
         # that can be configurable by it. Let's keep it to maintain
@@ -3748,6 +3735,8 @@ def docker_build_publish(parse, xml_parent, data):
     :arg str file-path: Path of the Dockerfile. (default '')
     :arg str build-context: Project root path for the build, defaults to the
         workspace if not specified. (default '')
+    :arg str build-additional-args: Additional build arguments passed to docker
+        build command. (default '')
 
     Minimal example:
 
@@ -3772,6 +3761,7 @@ def docker_build_publish(parse, xml_parent, data):
         ('skip-push', 'skipPush', False),
         ('file-path', 'dockerfilePath', ''),
         ('build-context', 'buildContext', ''),
+        ('build-additional-args', 'buildAdditionalArgs', ''),
     ]
     convert_mapping_to_xml(db, data, mapping, fail_required=True)
 

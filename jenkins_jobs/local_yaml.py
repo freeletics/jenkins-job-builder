@@ -127,14 +127,30 @@ Example:
     on any filename passed via ``!include-raw-escape:`` the tag will be
     automatically converted to ``!include-raw:`` and no escaping will be
     performed.
+
+
+The tag ``!include-jinja2:`` will treat the given string or list of strings as
+filenames to be opened as Jinja2 templates, which should be rendered to a
+string and included in the calling YAML construct.  (This is analogous to the
+templating that will happen with ``!include-raw``.)
+
+Examples:
+
+    .. literalinclude:: /../../tests/yamlparser/fixtures/jinja01.yaml
+
+    contents of jinja01.yaml.inc:
+
+        .. literalinclude:: /../../tests/yamlparser/fixtures/jinja01.yaml.inc
 """
 
+import copy
 import functools
 import io
 import logging
 import os
 import re
 
+import jinja2
 import yaml
 from yaml.constructor import BaseConstructor
 from yaml.representer import BaseRepresenter
@@ -275,6 +291,32 @@ class LocalLoader(OrderedConstructor, LocalAnchorLoader):
     def _escape(self, data):
         return re.sub(r'({|})', r'\1\1', data)
 
+    def __deepcopy__(self, memo):
+        """
+        Make a deep copy of a LocalLoader excluding the uncopyable self.stream.
+
+        This is achieved by performing a shallow copy of self, setting the
+        stream attribute to None and then performing a deep copy of the shallow
+        copy.
+
+        (As this method will be called again on that deep copy, we also set a
+        sentinel attribute on the shallow copy to ensure that we don't recurse
+        infinitely.)
+        """
+        assert self.done, 'Unsafe to copy an in-progress loader'
+        if getattr(self, '_copy', False):
+            # This is a shallow copy for an in-progress deep copy, remove the
+            # _copy marker and return self
+            del self._copy
+            return self
+        # Make a shallow copy
+        shallow = copy.copy(self)
+        shallow.stream = None
+        shallow._copy = True
+        deep = copy.deepcopy(shallow, memo)
+        memo[id(self)] = deep
+        return deep
+
 
 class LocalDumper(OrderedRepresenter, yaml.Dumper):
     def __init__(self, *args, **kwargs):
@@ -349,8 +391,8 @@ class YamlInclude(BaseYAMLObject):
         elif isinstance(node, yaml.SequenceNode):
             contents = [cls._from_file(loader, scalar_node)
                         for scalar_node in node.value]
-            if any(isinstance(s, LazyLoader) for s in contents):
-                return LazyLoaderCollection(contents)
+            if any(isinstance(s, CustomLoader) for s in contents):
+                return CustomLoaderCollection(contents)
 
             return u'\n'.join(contents)
         else:
@@ -383,6 +425,17 @@ class YamlIncludeRawEscape(YamlIncludeRaw):
             return loader.escape_callback(data)
 
 
+class YamlIncludeJinja2(YamlIncludeRaw):
+    yaml_tag = u'!include-jinja2:'
+
+    @classmethod
+    def _from_file(cls, loader, node):
+        contents = cls._open_file(loader, node)
+        if isinstance(contents, LazyLoader):
+            return contents
+        return Jinja2Loader(contents)
+
+
 class DeprecatedTag(BaseYAMLObject):
 
     @classmethod
@@ -407,8 +460,23 @@ class YamlIncludeRawEscapeDeprecated(DeprecatedTag):
     _new = YamlIncludeRawEscape
 
 
-class LazyLoaderCollection(object):
-    """Helper class to format a collection of LazyLoader objects"""
+class CustomLoader(object):
+    """Parent class for non-standard loaders."""
+
+
+class Jinja2Loader(CustomLoader):
+    """A loader for Jinja2-templated files."""
+    def __init__(self, contents):
+        self._contents = contents
+
+    def format(self, **kwargs):
+        _template = jinja2.Template(self._contents)
+        _template.environment.undefined = jinja2.StrictUndefined
+        return _template.render(kwargs)
+
+
+class CustomLoaderCollection(object):
+    """Helper class to format a collection of CustomLoader objects"""
     def __init__(self, sequence):
         self._data = sequence
 
@@ -416,7 +484,7 @@ class LazyLoaderCollection(object):
         return u'\n'.join(item.format(*args, **kwargs) for item in self._data)
 
 
-class LazyLoader(object):
+class LazyLoader(CustomLoader):
     """Helper class to provide lazy loading of files included using !include*
     tags where the path to the given file contains unresolved placeholders.
     """
