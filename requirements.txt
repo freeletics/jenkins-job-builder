@@ -1,4 +1,4 @@
 six>=1.5.2
 PyYAML
-python-jenkins>=0.4.8
+git+https://github.com/freeletics/python-jenkins.git@master#egg=python-jenkins
 pbr>=1.0.0
