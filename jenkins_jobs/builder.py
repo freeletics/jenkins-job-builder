@@ -163,12 +163,11 @@ class Jenkins(object):
             logger.info("Creating jenkins job {0}".format(job_name))
             self.jenkins.create_job(job_name, xml)
 
-    def is_job(self, job_name):
-        # first use cache
-        if job_name in self.job_list:
-            return True
+    def is_job(self, job_name, use_cache=True):
+        if use_cache:
+            if job_name in self.job_list:
+                return True
 
-        # if not exists, use jenkins
         return self.jenkins.job_exists(job_name)
 
     def get_job_md5(self, job_name):
@@ -298,7 +297,7 @@ class Builder(object):
         if keep is None:
             keep = [job.name for job in self.parser.xml_jobs]
         for job in jobs:
-            if job['fullname'] not in keep:
+            if job['fullname'] not in keep and self.is_job(job['fullname'], use_cache=False):
                 if self.jenkins.is_managed(job['fullname']):
                     logger.info("Removing obsolete jenkins job {0}"
                                 .format(job['fullname']))
