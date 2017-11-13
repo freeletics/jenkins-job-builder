@@ -297,7 +297,8 @@ class Builder(object):
         if keep is None:
             keep = [job.name for job in self.parser.xml_jobs]
         for job in jobs:
-            if job['fullname'] not in keep and self.is_job(job['fullname'], use_cache=False):
+            if job['fullname'] not in keep and \
+                    self.jenkins.is_job(job['fullname'], use_cache=False):
                 if self.jenkins.is_managed(job['fullname']):
                     logger.info("Removing obsolete jenkins job {0}"
                                 .format(job['fullname']))
