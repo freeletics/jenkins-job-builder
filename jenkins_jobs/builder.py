@@ -19,6 +19,7 @@ import errno
 import hashlib
 import io
 import logging
+import operator
 import os
 from pprint import pformat
 import re
@@ -27,7 +28,6 @@ import xml.etree.ElementTree as XML
 
 import jenkins
 
-from jenkins_jobs.alphanum import AlphanumSort
 from jenkins_jobs.cache import JobCache
 from jenkins_jobs.constants import MAGIC_MANAGE_STRING
 from jenkins_jobs.parallel import concurrent
@@ -69,7 +69,7 @@ class JenkinsManager(object):
     def jobs(self):
         if self._jobs is None:
             # populate jobs
-            self._jobs = self.jenkins.get_all_jobs()
+            self._jobs = self.jenkins.get_jobs()
 
         return self._jobs
 
@@ -154,17 +154,17 @@ class JenkinsManager(object):
         if keep is None:
             keep = []
         for job in jobs:
-            if job['fullname'] not in keep:
-                if self.is_managed(job['fullname']):
+            if job['name'] not in keep:
+                if self.is_managed(job['name']):
                     logger.info("Removing obsolete jenkins job {0}"
-                                .format(job['fullname']))
-                    self.delete_job(job['fullname'])
+                                .format(job['name']))
+                    self.delete_job(job['name'])
                     deleted_jobs += 1
                 else:
                     logger.info("Not deleting unmanaged jenkins job %s",
-                                job['fullname'])
+                                job['name'])
             else:
-                logger.debug("Keeping job %s", job['fullname'])
+                logger.debug("Keeping job %s", job['name'])
         return deleted_jobs
 
     def delete_jobs(self, jobs):
@@ -199,7 +199,7 @@ class JenkinsManager(object):
         orig = time.time()
 
         logger.info("Number of jobs generated:  %d", len(xml_jobs))
-        xml_jobs.sort(key=AlphanumSort)
+        xml_jobs.sort(key=operator.attrgetter('name'))
 
         if (output and not hasattr(output, 'write') and
                 not os.path.isdir(output)):
@@ -360,7 +360,7 @@ class JenkinsManager(object):
         orig = time.time()
 
         logger.info("Number of views generated:  %d", len(xml_views))
-        xml_views.sort(key=AlphanumSort)
+        xml_views.sort(key=operator.attrgetter('name'))
 
         if output:
             # ensure only wrapped once
