@@ -27,7 +27,7 @@ the build is complete.
 
 import logging
 import pkg_resources
-import sys
+import random
 import xml.etree.ElementTree as XML
 
 import six
@@ -130,19 +130,44 @@ def archive(registry, xml_parent, data):
     .. literalinclude::  /../../tests/publishers/fixtures/archive001.yaml
        :language: yaml
     """
+    logger = logging.getLogger("%s:archive" % __name__)
     archiver = XML.SubElement(xml_parent, 'hudson.tasks.ArtifactArchiver')
-    mapping = [
-        ('artifacts', 'artifacts', None),
-        ('allow-empty', 'allowEmptyArchive', False),
-        ('only-if-success', 'onlyIfSuccessful', False),
-        ('fingerprint', 'fingerprint', False),
-        ('default-excludes', 'defaultExcludes', True),
-        ('case-sensitive', 'caseSensitive', True),
-        ('latest-only', 'latestOnly', False)]
-
+    artifacts = XML.SubElement(archiver, 'artifacts')
+    artifacts.text = data['artifacts']
     if 'excludes' in data:
-        mapping.append(('excludes', 'excludes', None))
-    helpers.convert_mapping_to_xml(archiver, data, mapping, fail_required=True)
+        excludes = XML.SubElement(archiver, 'excludes')
+        excludes.text = data['excludes']
+    latest = XML.SubElement(archiver, 'latestOnly')
+    # backward compatibility
+    latest_only = data.get('latest_only', False)
+    if 'latest_only' in data:
+        logger.warning('latest_only is deprecated please use latest-only')
+    if 'latest-only' in data:
+        latest_only = data['latest-only']
+    if latest_only:
+        latest.text = 'true'
+    else:
+        latest.text = 'false'
+
+    if 'allow-empty' in data:
+        empty = XML.SubElement(archiver, 'allowEmptyArchive')
+        # Default behavior is to fail the build.
+        empty.text = str(data.get('allow-empty', False)).lower()
+
+    if 'only-if-success' in data:
+        success = XML.SubElement(archiver, 'onlyIfSuccessful')
+        success.text = str(data.get('only-if-success', False)).lower()
+
+    if 'fingerprint' in data:
+        fingerprint = XML.SubElement(archiver, 'fingerprint')
+        fingerprint.text = str(data.get('fingerprint', False)).lower()
+
+    default_excludes = XML.SubElement(archiver, 'defaultExcludes')
+    default_excludes.text = str(data.get('default-excludes', True)).lower()
+
+    if 'case-sensitive' in data:
+        case_sensitive = XML.SubElement(archiver, 'caseSensitive')
+        case_sensitive.text = str(data.get('case-sensitive', True)).lower()
 
 
 def blame_upstream(registry, xml_parent, data):
@@ -2445,9 +2470,7 @@ def groovy_postbuild(registry, xml_parent, data):
         }
     # There are incompatible changes, we need to know version
     info = registry.get_plugin_info('groovy-postbuild')
-    # Note: Assume latest version of plugin is preferred config format
-    version = pkg_resources.parse_version(
-        info.get('version', str(sys.maxsize)))
+    version = pkg_resources.parse_version(info.get('version', "0"))
     # Version specific predicates
     matrix_parent_support = version >= pkg_resources.parse_version("1.9")
     security_plugin_support = version >= pkg_resources.parse_version("2.0")
@@ -4176,14 +4199,12 @@ def plot(registry, xml_parent, data):
                 Xpath which selects the values that should be plotted.
 
 
-    Minimal Example:
+    Example:
 
-    .. literalinclude:: /../../tests/publishers/fixtures/plot-minimal.yaml
+    .. literalinclude:: /../../tests/publishers/fixtures/plot004.yaml
        :language: yaml
 
-    Full Example:
-
-    .. literalinclude:: /../../tests/publishers/fixtures/plot-full.yaml
+    .. literalinclude:: /../../tests/publishers/fixtures/plot005.yaml
        :language: yaml
     """
     top = XML.SubElement(xml_parent, 'hudson.plugins.plot.PlotPublisher')
@@ -4198,43 +4219,14 @@ def plot(registry, xml_parent, data):
                       'exclude-by-string': 'EXCLUDE_BY_STRING',
                       'include-by-column': 'INCLUDE_BY_COLUMN',
                       'exclude-by-column': 'EXCLUDE_BY_COLUMN'}
-
-    style_list = ['area', 'bar', 'bar3d', 'line', 'line3d', 'stackedArea',
-                  'stackedbar', 'stackedbar3d', 'waterfall']
-
-    plot_mappings = [
-        ('title', 'title', ''),
-        ('yaxis', 'yaxis', ''),
-        ('width', 'width', '750'),
-        ('height', 'height', '450'),
-        ('csv-file-name', 'csvFileName', ''),
-        ('group', 'group', None),
-        ('use-description', 'useDescr', False),
-        ('exclude-zero-yaxis', 'exclZero', False),
-        ('logarithmic-yaxis', 'logarithmic', False),
-        ('keep-records', 'keepRecords', False),
-        ('num-builds', 'numBuilds', ''),
-        ('style', 'style', 'line', style_list),
-    ]
-
-    plot_csv_mappings = [
-        ('inclusion-flag', 'inclusionFlag', 'off', inclusion_dict),
-        ('exclude', 'exclusionValues', ''),
-        ('url', 'url', ''),
-        ('display-table', 'displayTableFlag', False)
-    ]
-
-    plot_xml_mappings = [
-        ('url', 'url', ''),
-        ('xpath', 'xpathString', ''),
-        ('xpath-type', 'nodeTypeString', 'node', xpath_dict)
-    ]
-
     for plot in data:
         plugin = XML.SubElement(plots, 'hudson.plugins.plot.Plot')
-        helpers.convert_mapping_to_xml(
-            plugin, plot, plot_mappings, fail_required=True)
-
+        XML.SubElement(plugin, 'title').text = plot.get('title', '')
+        XML.SubElement(plugin, 'yaxis').text = plot['yaxis']
+        XML.SubElement(plugin, 'width').text = str(plot.get('width', '750'))
+        XML.SubElement(plugin, 'height').text = str(plot.get('height', '450'))
+        XML.SubElement(plugin, 'csvFileName').text = \
+            plot.get('csv-file-name', '%s.csv' % random.randrange(2 << 32))
         topseries = XML.SubElement(plugin, 'series')
         series = plot['series']
         for serie in series:
@@ -4248,18 +4240,55 @@ def plot(registry, xml_parent, data):
             if format_data == 'properties':
                 XML.SubElement(subserie, 'label').text = serie.get('label', '')
             if format_data == 'csv':
-                helpers.convert_mapping_to_xml(
-                    subserie, serie, plot_csv_mappings, fail_required=True)
+                inclusion_flag = serie.get('inclusion-flag', 'off')
+                if inclusion_flag not in inclusion_dict:
+                    raise JenkinsJobsException("Inclusion flag result entered "
+                                               "is not valid, must be one of: "
+                                               "%s"
+                                               % ", ".join(inclusion_dict))
+                XML.SubElement(subserie, 'inclusionFlag').text = \
+                    inclusion_dict.get(inclusion_flag)
+                XML.SubElement(subserie, 'exclusionValues').text = \
+                    serie.get('exclude', '')
                 if serie.get('exclude', ''):
                     exclude_strings = serie.get('exclude', '').split(',')
                     exclusionset = XML.SubElement(subserie, 'strExclusionSet')
                     for exclude_string in exclude_strings:
                         XML.SubElement(exclusionset, 'string').text = \
                             exclude_string
+                XML.SubElement(subserie, 'url').text = serie.get('url', '')
+                XML.SubElement(subserie, 'displayTableFlag').text = \
+                    str(serie.get('display-table', False)).lower()
             if format_data == 'xml':
-                helpers.convert_mapping_to_xml(
-                    subserie, serie, plot_xml_mappings, fail_required=True)
+                XML.SubElement(subserie, 'url').text = serie.get('url', '')
+                XML.SubElement(subserie, 'xpathString').text = \
+                    serie.get('xpath')
+                xpathtype = serie.get('xpath-type', 'node')
+                if xpathtype not in xpath_dict:
+                    raise JenkinsJobsException("XPath result entered is not "
+                                               "valid, must be one of: %s" %
+                                               ", ".join(xpath_dict))
+                XML.SubElement(subserie, 'nodeTypeString').text = \
+                    xpath_dict.get(xpathtype)
             XML.SubElement(subserie, 'fileType').text = serie.get('format')
+
+        mappings = [
+            ('group', 'group', None),
+            ('use-description', 'useDescr', False),
+            ('exclude-zero-yaxis', 'exclZero', False),
+            ('logarithmic-yaxis', 'logarithmic', False),
+            ('keep-records', 'keepRecords', False),
+            ('num-builds', 'numBuilds', '')]
+        helpers.convert_mapping_to_xml(
+            plugin, plot, mappings, fail_required=True)
+
+        style_list = ['area', 'bar', 'bar3d', 'line', 'line3d', 'stackedArea',
+                      'stackedbar', 'stackedbar3d', 'waterfall']
+        style = plot.get('style', 'line')
+        if style not in style_list:
+            raise JenkinsJobsException("style entered is not valid, must be "
+                                       "one of: %s" % ", ".join(style_list))
+        XML.SubElement(plugin, 'style').text = style
 
 
 def git(registry, xml_parent, data):
@@ -5593,11 +5622,10 @@ def conditional_publisher(registry, xml_parent, data):
 
             action_parent = cond_publisher
 
-            plugin_info = registry.get_plugin_info("Flexible Publish Plugin")
-            # Note: Assume latest version of plugin is preferred config format
-            version = pkg_resources.parse_version(
-                plugin_info.get('version', str(sys.maxsize)))
-
+            plugin_info = \
+                registry.get_plugin_info("Flexible Publish Plugin")
+            version = pkg_resources.parse_version(plugin_info.get('version',
+                                                                  '0'))
             # XML tag changed from publisher to publisherList in v0.13
             # check the plugin version to determine further operations
             use_publisher_list = version >= pkg_resources.parse_version("0.13")
@@ -5961,18 +5989,20 @@ def google_cloud_storage(registry, xml_parent, data):
     """
 
     def expiring_elements(properties, upload_element, types):
-        # Handle expiring elements upload action
+        """Handle expiring elements upload action
+        """
 
         xml_element = XML.SubElement(upload_element, 'com.google.'
                                      'jenkins.plugins.storage.'
                                      'ExpiringBucketLifecycleManager')
-        mapping = [
-            ('bucket-name', 'bucketNameWithVars', None),
-            ('', 'sharedPublicly', False),
-            ('', 'forFailedJobs', False),
-            ('days-to-retain', 'bucketObjectTTL', None)]
-        helpers.convert_mapping_to_xml(
-            xml_element, properties, mapping, fail_required=True)
+
+        if 'bucket-name' not in properties:
+            raise MissingAttributeError('bucket-name')
+        XML.SubElement(xml_element, 'bucketNameWithVars').text = str(
+            properties['bucket-name'])
+
+        XML.SubElement(xml_element, 'sharedPublicly').text = 'false'
+        XML.SubElement(xml_element, 'forFailedJobs').text = 'false'
 
         if types.count('expiring-elements') > 1:
             XML.SubElement(xml_element, 'module',
@@ -5981,20 +6011,34 @@ def google_cloud_storage(registry, xml_parent, data):
         else:
             XML.SubElement(xml_element, 'module')
 
+        if 'days-to-retain' not in properties:
+            raise MissingAttributeError('days-to-retain')
+        XML.SubElement(xml_element, 'bucketObjectTTL').text = str(
+            properties['days-to-retain'])
+
     def build_log(properties, upload_element, types):
-        # Handle build log upload action
+        """Handle build log upload action
+        """
 
         xml_element = XML.SubElement(upload_element, 'com.google.jenkins.'
                                      'plugins.storage.StdoutUpload')
-        mapping = [
-            ('storage-location', 'bucketNameWithVars', None),
-            ('share-publicly', 'sharedPublicly', False),
-            ('upload-for-failed-jobs', 'forFailedJobs', False),
-            ('show-inline', 'showInline', True),
-            ('strip-prefix', 'pathPrefix', ''),
-            ('log-name', 'logName', None)]
-        helpers.convert_mapping_to_xml(
-            xml_element, properties, mapping, fail_required=True)
+
+        if 'storage-location' not in properties:
+            raise MissingAttributeError('storage-location')
+        XML.SubElement(xml_element, 'bucketNameWithVars').text = str(
+            properties['storage-location'])
+
+        XML.SubElement(xml_element, 'sharedPublicly').text = str(
+            properties.get('share-publicly', False)).lower()
+
+        XML.SubElement(xml_element, 'forFailedJobs').text = str(
+            properties.get('upload-for-failed-jobs', False)).lower()
+
+        XML.SubElement(xml_element, 'showInline').text = str(
+            properties.get('show-inline', True)).lower()
+
+        XML.SubElement(xml_element, 'pathPrefix').text = str(
+            properties.get('strip-prefix', ''))
 
         if types.count('build-log') > 1:
             XML.SubElement(xml_element, 'module',
@@ -6003,20 +6047,34 @@ def google_cloud_storage(registry, xml_parent, data):
         else:
             XML.SubElement(xml_element, 'module')
 
+        if 'log-name' not in properties:
+            raise MissingAttributeError('log-name')
+        XML.SubElement(xml_element, 'logName').text = str(
+            properties['log-name'])
+
     def classic(properties, upload_element, types):
-        # Handle classic upload action
+        """Handle classic upload action
+        """
 
         xml_element = XML.SubElement(upload_element, 'com.google.jenkins.'
                                      'plugins.storage.ClassicUpload')
-        mapping = [
-            ('storage-location', 'bucketNameWithVars', None),
-            ('share-publicly', 'sharedPublicly', False),
-            ('upload-for-failed-jobs', 'forFailedJobs', False),
-            ('show-inline', 'showInline', False),
-            ('strip-prefix', 'pathPrefix', ''),
-            ('file-pattern', 'sourceGlobWithVars', None)]
-        helpers.convert_mapping_to_xml(
-            xml_element, properties, mapping, fail_required=True)
+
+        if 'storage-location' not in properties:
+            raise MissingAttributeError('storage-location')
+        XML.SubElement(xml_element, 'bucketNameWithVars').text = str(
+            properties['storage-location'])
+
+        XML.SubElement(xml_element, 'sharedPublicly').text = str(
+            properties.get('share-publicly', False)).lower()
+
+        XML.SubElement(xml_element, 'forFailedJobs').text = str(
+            properties.get('upload-for-failed-jobs', False)).lower()
+
+        XML.SubElement(xml_element, 'showInline').text = str(
+            properties.get('show-inline', False)).lower()
+
+        XML.SubElement(xml_element, 'pathPrefix').text = str(
+            properties.get('strip-prefix', ''))
 
         if types.count('classic') > 1:
             XML.SubElement(xml_element, 'module',
@@ -6025,17 +6083,26 @@ def google_cloud_storage(registry, xml_parent, data):
         else:
             XML.SubElement(xml_element, 'module')
 
+        if 'file-pattern' not in properties:
+            raise MissingAttributeError('file-pattern')
+        XML.SubElement(xml_element, 'sourceGlobWithVars').text = str(
+            properties['file-pattern'])
+
     uploader = XML.SubElement(xml_parent,
                               'com.google.jenkins.plugins.storage.'
                               'GoogleCloudStorageUploader',
                               {'plugin': 'google-storage-plugin'})
 
-    mapping = [('credentials-id', 'credentialsId', None)]
-    helpers.convert_mapping_to_xml(uploader, data, mapping, fail_required=True)
+    try:
+        credentials_id = str(data['credentials-id'])
+    except KeyError as e:
+        raise MissingAttributeError(e.args[0])
+    XML.SubElement(uploader, 'credentialsId').text = credentials_id
 
     valid_upload_types = ['expiring-elements',
                           'build-log',
                           'classic']
+
     types = []
 
     upload_element = XML.SubElement(uploader, 'uploads')
@@ -6407,13 +6474,9 @@ def slack(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Slack Plugin <Slack+Plugin>`
 
     When using Slack Plugin version < 2.0, Slack Plugin itself requires a
-    publisher as well as properties please note that you have to create those
+    publisher aswell as properties please note that you have to create those
     too.  When using Slack Plugin version >= 2.0, you should only configure the
     publisher.
-
-    For backward compatibility, the publisher needs to query version of the
-    Slack Plugin. Hence the ``query_plugins_info`` parameter shouldn't be set
-    to ``False`` in the ``jenkins`` section of the configuration file.
 
     :arg str team-domain: Your team's domain at slack. (default '')
     :arg str auth-token: The integration token to be used when sending
@@ -6449,13 +6512,6 @@ def slack(registry, xml_parent, data):
         notification (>=2.0). (default false)
     :arg str custom-message: Custom message to be included (>=2.0).
         (default '')
-    :arg str auth-token-credential-id: The ID for the integration token from
-        the Credentials plugin to be used to send notifications to Slack.
-        (>=2.1) (default '')
-    :arg bool bot-user: This option indicates the token belongs to a bot user
-        in Slack. (>=2.2) (default False)
-    :arg str base-url: Your Slack compatible Base URL. ``bot-user`` is not
-        supported with Base URL. (>=2.2) (default '')
 
     Example (version < 2.0):
 
@@ -6484,9 +6540,7 @@ def slack(registry, xml_parent, data):
     logger = logging.getLogger(__name__)
 
     plugin_info = registry.get_plugin_info('Slack Notification Plugin')
-    # Note: Assume latest version of plugin is preferred config format
-    plugin_ver = pkg_resources.parse_version(
-        plugin_info.get('version', str(sys.maxsize)))
+    plugin_ver = pkg_resources.parse_version(plugin_info.get('version', "0"))
 
     mapping = (
         ('team-domain', 'teamDomain', ''),
@@ -6507,9 +6561,6 @@ def slack(registry, xml_parent, data):
         ('commit-info-choice', 'commitInfoChoice', 'NONE'),
         ('include-custom-message', 'includeCustomMessage', False),
         ('custom-message', 'customMessage', ''),
-        ('auth-token-credential-id', 'authTokenCredentialId', ''),
-        ('bot-user', 'botUser', False),
-        ('base-url', 'baseUrl', ''),
     )
 
     commit_info_choices = ['NONE', 'AUTHORS', 'AUTHORS_AND_TITLES']
@@ -6540,20 +6591,17 @@ def slack(registry, xml_parent, data):
         value = data.get(yaml_name, default_value)
 
         # 'commit-info-choice' is enumerated type
-        if (
-                yaml_name == 'commit-info-choice' and
-                value not in commit_info_choices):
-            raise InvalidAttributeError(
-                yaml_name, value, commit_info_choices,
-            )
+        if yaml_name == 'commit-info-choice':
+            if value not in commit_info_choices:
+                raise InvalidAttributeError(
+                    yaml_name, value, commit_info_choices,
+                )
 
         # Ensure that custom-message is set when include-custom-message is set
         # to true.
-        if (
-                yaml_name == 'include-custom-message' and
-                data is False and
-                not data.get('custom-message', '')):
-            raise MissingAttributeError('custom-message')
+        if yaml_name == 'include-custom-message' and data is False:
+            if not data.get('custom-message', ''):
+                raise MissingAttributeError('custom-message')
 
         _add_xml(slack, xml_name, value)
 
@@ -6799,52 +6847,6 @@ def chuck_norris(registry, xml_parent, data):
     chuck = XML.SubElement(xml_parent,
                            'hudson.plugins.chucknorris.CordellWalkerRecorder')
     return XML.SubElement(chuck, "factGenerator")
-
-
-def newrelic_deployment_notifier(parse, xml_parent, data):
-    """yaml: newrelic-deployment-notifier
-    Requires the Jenkins :jenkins-wiki`New Relic Deployment Notifier Plugin
-    <New+Relic+Deployment+Notifier+Plugin>`.
-    :arg list notification: list of notification deployments
-        :Notification:
-            * **api-key** (`str`) -- Deployment notification requires an API key.
-            * **application-id** (`str`) -- Application to register deployment for..
-            * **description** (`str`) -- Text annotation for the deployment (default '')
-            * **revision** (`str`) -- The revision number from your source
-                control system (default '')
-            * **changelog** (`str`) -- A list of changes for this deployment (default '')
-            * **user** (`str`) -- The name of the user/process that triggered this deployment
-              (default '')
-    Example:
-    .. literalinclude::
-        ../../tests/builders/fixtures/newrelic-notifier.yaml
-       :language: yaml
-    """
-
-    newrelic_notifier = XML.SubElement(
-        xml_parent,
-        'org.jenkinsci.plugins.newrelicnotifier.NewRelicDeploymentNotifier')
-    newrelic_notifier.set('plugin', 'newrelic-deployment-notifier')
-    client = XML.SubElement(newrelic_notifier, 'client')
-    client.set('class', 'org.jenkinsci.plugins.newrelicnotifier.api.NewRelicClientImpl')
-    xml_notifications = XML.SubElement(newrelic_notifier, 'notifications')
-
-    notifications = data.get('notifications', [])
-    for notification in notifications:
-        xml_notification = XML.SubElement(xml_notifications,
-         'org.jenkinsci.plugins.newrelicnotifier.DeploymentNotificationBean')
-        XML.SubElement(xml_notification, 'apiKey').text = str(
-            notification.get('api-key', ''))
-        XML.SubElement(xml_notification, 'applicationId').text = str(
-            notification.get('application-id', ''))
-        XML.SubElement(xml_notification, 'description').text = str(
-            notification.get('description', ''))
-        XML.SubElement(xml_notification, 'revision').text = str(
-            notification.get('revision', ''))
-        XML.SubElement(xml_notification, 'changelog').text = str(
-            notification.get('changelog', ''))
-        XML.SubElement(xml_notification, 'user').text = str(
-            notification.get('user', ''))
 
 
 class Publishers(jenkins_jobs.modules.base.Base):

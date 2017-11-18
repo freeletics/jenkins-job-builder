@@ -41,6 +41,7 @@ import xml.etree.ElementTree as XML
 
 from jenkins_jobs.errors import InvalidAttributeError
 from jenkins_jobs.errors import JenkinsJobsException
+from jenkins_jobs.errors import MissingAttributeError
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 
@@ -555,21 +556,21 @@ def cvs(registry, xml_parent, data):
     """
     prefix = 'hudson.scm.'
     valid_loc_types = {'HEAD': 'Head', 'TAG': 'Tag', 'BRANCH': 'Branch'}
-
     cvs = XML.SubElement(xml_parent, 'scm', {'class': prefix + 'CVSSCM'})
     repos = data.get('repos')
+    if not repos:
+        raise JenkinsJobsException("'repos' empty or missing")
     repos_tag = XML.SubElement(cvs, 'repositories')
     for repo in repos:
         repo_tag = XML.SubElement(repos_tag, prefix + 'CvsRepository')
-
-        compression_level = repo.get('compression-level', '-1')
-        repo_mapping = [('root', 'cvsRoot', None),
-            ('', 'compressionLevel', int(compression_level), range(-1, 10))]
-        convert_mapping_to_xml(repo_tag,
-            repo, repo_mapping, fail_required=True)
-
+        try:
+            XML.SubElement(repo_tag, 'cvsRoot').text = repo['root']
+        except KeyError:
+            raise MissingAttributeError('root')
         items_tag = XML.SubElement(repo_tag, 'repositoryItems')
         locations = repo.get('locations')
+        if not locations:
+            raise JenkinsJobsException("'locations' empty or missing")
         for location in locations:
             item_tag = XML.SubElement(items_tag, prefix + 'CvsRepositoryItem')
             loc_type = location.get('type', 'HEAD')
@@ -579,34 +580,36 @@ def cvs(registry, xml_parent, data):
                          'Location').format(prefix, valid_loc_types[loc_type])
             loc_tag = XML.SubElement(item_tag, 'location',
                                      {'class': loc_class})
-            mapping = [('type', 'locationType', 'HEAD')]
-            convert_mapping_to_xml(
-                loc_tag, location, mapping, fail_required=True)
-
-            if loc_type != 'HEAD':
-                mapping = [
-                    ('name', 'locationName', ''),
-                    ('use-head', 'useHeadIfNotFound', False)]
-                convert_mapping_to_xml(
-                    loc_tag, location, mapping, fail_required=True)
-
+            XML.SubElement(loc_tag, 'locationType').text = loc_type
+            if loc_type == 'TAG' or loc_type == 'BRANCH':
+                XML.SubElement(loc_tag, 'locationName').text = location.get(
+                    'name', '')
+                XML.SubElement(loc_tag, 'useHeadIfNotFound').text = str(
+                    location.get('use-head', False)).lower()
             modules = location.get('modules')
+            if not modules:
+                raise JenkinsJobsException("'modules' empty or missing")
             modules_tag = XML.SubElement(item_tag, 'modules')
             for module in modules:
                 module_tag = XML.SubElement(modules_tag, prefix + 'CvsModule')
-                mapping = [
-                    ('remote', 'remoteName', None),
-                    ('local-name', 'localName', '')]
-                convert_mapping_to_xml(
-                    module_tag, module, mapping, fail_required=True)
-
+                try:
+                    XML.SubElement(module_tag, 'remoteName'
+                                   ).text = module['remote']
+                except KeyError:
+                    raise MissingAttributeError('remote')
+                XML.SubElement(module_tag, 'localName').text = module.get(
+                    'local-name', '')
         excluded = repo.get('excluded-regions', [])
         excluded_tag = XML.SubElement(repo_tag, 'excludedRegions')
         for pattern in excluded:
             pattern_tag = XML.SubElement(excluded_tag,
                                          prefix + 'ExcludedRegion')
             XML.SubElement(pattern_tag, 'pattern').text = pattern
-
+        compression_level = repo.get('compression-level', '-1')
+        if int(compression_level) not in range(-1, 10):
+            raise InvalidAttributeError('compression-level',
+                                        compression_level, range(-1, 10))
+        XML.SubElement(repo_tag, 'compressionLevel').text = compression_level
     mappings = [
         ('use-update', 'canUseUpdate', True),
         ('prune-empty', 'pruneEmptyDirectories', True),
@@ -791,10 +794,6 @@ def svn(registry, xml_parent, data):
         and exclusion patterns for displaying changelog entries as it does for
         polling for changes (default false)
     :arg list repos: list of repositories to checkout (optional)
-    :arg list additional-credentials: list of additional credentials (optional)
-        :Additional-Credentials:
-            * **realm** (`str`) --  realm to use
-            * **credentials-id** (`str`) -- optional ID of credentials to use
     :arg str viewvc-url: URL of the svn web interface (optional)
 
         :Repo:
@@ -846,23 +845,6 @@ def svn(registry, xml_parent, data):
         populate_repo_xml(locations, data)
     else:
         raise JenkinsJobsException("A top level url or repos list must exist")
-
-    def populate_additional_credential_xml(parent, data):
-        module = XML.SubElement(parent,
-                            'hudson.scm.SubversionSCM_-AdditionalCredentials')
-        XML.SubElement(module, 'realm').text = data['realm']
-        if 'credentials-id' in data:
-            XML.SubElement(module, 'credentialsId').text = data[
-                'credentials-id']
-
-    if 'additional-credentials' in data:
-        additional_credentials = XML.SubElement(scm, 'additionalCredentials')
-        additional_credentials_data = data['additional-credentials']
-
-        for additional_credential in additional_credentials_data:
-            populate_additional_credential_xml(additional_credentials,
-                                               additional_credential)
-
     updater = data.get('workspaceupdater', 'wipeworkspace')
     if updater == 'wipeworkspace':
         updaterclass = 'CheckoutUpdater'
@@ -1257,13 +1239,15 @@ def url(registry, xml_parent, data):
     scm = XML.SubElement(xml_parent, 'scm', {'class':
                          'hudson.plugins.URLSCM.URLSCM'})
     urls = XML.SubElement(scm, 'urls')
-    for data_url in data['url-list']:
-        url_tuple = XML.SubElement(
-            urls, 'hudson.plugins.URLSCM.URLSCM_-URLTuple')
-        mapping = [('', 'urlString', data_url)]
-        convert_mapping_to_xml(url_tuple, data, mapping, fail_required=True)
-    mapping = [('clear-workspace', 'clearWorkspace', False)]
-    convert_mapping_to_xml(scm, data, mapping, fail_required=True)
+    try:
+        for data_url in data['url-list']:
+            url_tuple = XML.SubElement(
+                urls, 'hudson.plugins.URLSCM.URLSCM_-URLTuple')
+            XML.SubElement(url_tuple, 'urlString').text = data_url
+    except KeyError as e:
+        raise MissingAttributeError(e.args[0])
+    XML.SubElement(scm, 'clearWorkspace').text = str(
+        data.get('clear-workspace', False)).lower()
 
 
 def dimensions(registry, xml_parent, data):

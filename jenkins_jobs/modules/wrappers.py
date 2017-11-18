@@ -24,7 +24,6 @@ Wrappers can alter the way the build is run as well as the build output.
 
 import logging
 import pkg_resources
-import sys
 import xml.etree.ElementTree as XML
 
 from jenkins_jobs.errors import InvalidAttributeError
@@ -329,37 +328,34 @@ def timeout(registry, xml_parent, data):
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.AbsoluteTimeOutStrategy"})
-            mapping = [('timeout', 'timeoutMinutes', 3)]
-            convert_mapping_to_xml(strategy_element,
-                data, mapping, fail_required=True)
+            XML.SubElement(strategy_element, 'timeoutMinutes'
+                           ).text = str(data.get('timeout', 3))
         elif strategy == "no-activity":
             strategy_element = XML.SubElement(
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.NoActivityTimeOutStrategy"})
             timeout_sec = int(data.get('timeout', 3)) * MIN_TO_SEC
-            mapping = [('', 'timeoutSecondsString', timeout_sec)]
-            convert_mapping_to_xml(strategy_element,
-                data, mapping, fail_required=True)
+            XML.SubElement(strategy_element,
+                           'timeoutSecondsString').text = str(timeout_sec)
         elif strategy == "likely-stuck":
             strategy_element = XML.SubElement(
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.LikelyStuckTimeOutStrategy"})
-            mapping = [('timeout', 'timeoutMinutes', 3)]
-            convert_mapping_to_xml(strategy_element,
-                data, mapping, fail_required=True)
+            XML.SubElement(strategy_element,
+                           'timeoutMinutes').text = str(data.get('timeout', 3))
         elif strategy == "elastic":
             strategy_element = XML.SubElement(
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.ElasticTimeOutStrategy"})
-            mapping = [
-                ('elastic-percentage', 'timeoutPercentage', 0),
-                ('elastic-number-builds', 'numberOfBuilds', 0),
-                ('elastic-default-timeout', 'timeoutMinutesElasticDefault', 3)]
-            convert_mapping_to_xml(strategy_element,
-                data, mapping, fail_required=True)
+            XML.SubElement(strategy_element, 'timeoutPercentage'
+                           ).text = str(data.get('elastic-percentage', 0))
+            XML.SubElement(strategy_element, 'numberOfBuilds'
+                           ).text = str(data.get('elastic-number-builds', 0))
+            XML.SubElement(strategy_element, 'timeoutMinutesElasticDefault'
+                           ).text = str(data.get('elastic-default-timeout', 3))
 
         elif strategy == "deadline":
             strategy_element = XML.SubElement(
@@ -367,12 +363,11 @@ def timeout(registry, xml_parent, data):
                 {'class': "hudson.plugins.build_timeout."
                           "impl.DeadlineTimeOutStrategy"})
             deadline_time = str(data.get('deadline-time', '0:00:00'))
+            XML.SubElement(strategy_element,
+                           'deadlineTime').text = str(deadline_time)
             deadline_tolerance = int(data.get('deadline-tolerance', 1))
-            mapping = [
-                ('', 'deadlineTime', deadline_time),
-                ('', 'deadlineToleranceInMinutes', deadline_tolerance)]
-            convert_mapping_to_xml(strategy_element,
-                data, mapping, fail_required=True)
+            XML.SubElement(strategy_element, 'deadlineToleranceInMinutes'
+                           ).text = str(deadline_tolerance)
 
         actions = []
 
@@ -404,19 +399,26 @@ def timeout(registry, xml_parent, data):
             else:
                 raise JenkinsJobsException("Unsupported BuiltTimeoutWrapper "
                                            "plugin action: {0}".format(action))
-        mapping = [('timeout-var', 'timeoutEnvVar', None)]
-        convert_mapping_to_xml(twrapper,
-            data, mapping, fail_required=False)
+        timeout_env_var = data.get('timeout-var')
+        if timeout_env_var:
+            XML.SubElement(twrapper,
+                           'timeoutEnvVar').text = str(timeout_env_var)
     else:
-        mapping = [
-            ('timeout', 'timeoutMinutes', 3),
-            ('timeout-var', 'timeoutEnvVar', None),
-            ('fail', 'failBuild', 'false'),
-            ('write-description', 'writingDescription', 'false'),
-            ('elastic-percentage', 'timeoutPercentage', 0),
-            ('elastic-default-timeout', 'timeoutMinutesElasticDefault', 3)]
-        convert_mapping_to_xml(twrapper,
-                data, mapping, fail_required=False)
+        XML.SubElement(twrapper,
+                       'timeoutMinutes').text = str(data.get('timeout', 3))
+        timeout_env_var = data.get('timeout-var')
+        if timeout_env_var:
+            XML.SubElement(twrapper,
+                           'timeoutEnvVar').text = str(timeout_env_var)
+        XML.SubElement(twrapper, 'failBuild'
+                       ).text = str(data.get('fail', 'false')).lower()
+        XML.SubElement(twrapper, 'writingDescription'
+                       ).text = str(data.get('write-description', 'false')
+                                    ).lower()
+        XML.SubElement(twrapper, 'timeoutPercentage'
+                       ).text = str(data.get('elastic-percentage', 0))
+        XML.SubElement(twrapper, 'timeoutMinutesElasticDefault'
+                       ).text = str(data.get('elastic-default-timeout', 3))
 
         tout_type = str(data.get('type', 'absolute')).lower()
         if tout_type == 'likely-stuck':
@@ -922,11 +924,6 @@ def inject(registry, xml_parent, data):
     :arg str properties-content: key value pair of properties (optional)
     :arg str script-file: path to the script file (optional)
     :arg str script-content: contents of a script (optional)
-    :arg dict evaluated-groovy-script: Evaluates a Groovy script and injects
-        the results into the environment
-        * **script** (str): groovy script content. (optional)
-        * **sandbox** (bool): run Groovy script in a sandbox with limited
-            abilities. (default false)
     :arg bool load-from-master: load files from master (default false)
 
     Example::
@@ -939,7 +936,6 @@ def inject(registry, xml_parent, data):
             script-content: echo $PATH
     """
     eib = XML.SubElement(xml_parent, 'EnvInjectBuildWrapper')
-    eib.set('plugin', 'envinject')
     info = XML.SubElement(eib, 'info')
     mapping = [
         ('properties-file', 'propertiesFilePath', None),
@@ -949,19 +945,6 @@ def inject(registry, xml_parent, data):
         ('load-from-master', 'loadFilesFromMaster', False),
     ]
     convert_mapping_to_xml(info, data, mapping, fail_required=False)
-
-    mapping = []
-    if 'evaluated-groovy-script' in data:
-        evaluated_groovy_script = XML.SubElement(info, 'secureGroovyScript')
-        evaluated_groovy_script.set('plugin', 'script-security')
-        evaluated_groovy_script_data = data['evaluated-groovy-script']
-        if 'script' in evaluated_groovy_script_data:
-            mapping.append(('script', 'script', None))
-
-        if 'sandbox' in evaluated_groovy_script_data:
-            mapping.append(('sandbox', 'sandbox', False))
-        convert_mapping_to_xml(
-            evaluated_groovy_script, evaluated_groovy_script_data, mapping, fail_required=False)
 
 
 def inject_ownership_variables(registry, xml_parent, data):
@@ -1159,17 +1142,23 @@ def openstack(registry, xml_parent, data):
             instances_to_run = XML.SubElement(
                 instances_wrapper, tag_prefix + 'InstancesToRun')
 
-            instance_mapping = [('cloud-name', 'cloudName', None),
-                ('count', 'count', 1)]
+            try:
+                cloud_name = instance['cloud-name']
+                template_name = instance['template-name']
+            except KeyError as exception:
+                raise MissingAttributeError(exception.args[0])
+
+            XML.SubElement(instances_to_run, 'cloudName').text = cloud_name
 
             if instance.get('manual-template', False):
-                instance_mapping.append(('template-name',
-                    'manualTemplateName', None))
+                XML.SubElement(instances_to_run,
+                               'manualTemplateName').text = template_name
             else:
-                instance_mapping.append(('template-name',
-                    'templateName', None))
-            convert_mapping_to_xml(instances_to_run,
-                instance, instance_mapping, fail_required=True)
+                XML.SubElement(instances_to_run,
+                               'templateName').text = template_name
+
+            XML.SubElement(instances_to_run, 'count').text = str(
+                instance.get('count', 1))
 
     if data.get('single-use', False):
         XML.SubElement(xml_parent, tag_prefix + 'JCloudsOneOffSlave')
@@ -1808,16 +1797,17 @@ def custom_tools(registry, xml_parent, data):
     tool_node = base + '.CustomToolInstallWrapper_-SelectedTool'
     for tool in tools:
         tool_wrapper = XML.SubElement(wrapper_tools, tool_node)
-        mapping = [('', 'name', tool)]
-        convert_mapping_to_xml(tool_wrapper, data, mapping, fail_required=True)
+        XML.SubElement(tool_wrapper, 'name').text = str(tool)
 
     opts = XML.SubElement(wrapper,
                           'multiconfigOptions')
-    mapping = [('skip-master-install', 'skipMasterInstallation', False)]
-    convert_mapping_to_xml(opts, data, mapping, fail_required=True)
+    skip_install = str(data.get('skip-master-install', 'false'))
+    XML.SubElement(opts,
+                   'skipMasterInstallation').text = skip_install
 
-    mapping = [('convert-homes-to-upper', 'convertHomesToUppercase', False)]
-    convert_mapping_to_xml(wrapper, data, mapping, fail_required=True)
+    convert_home = str(data.get('convert-homes-to-upper', 'false'))
+    XML.SubElement(wrapper,
+                   'convertHomesToUppercase').text = convert_home
 
 
 def nodejs_installator(registry, xml_parent, data):
@@ -2134,9 +2124,7 @@ def artifactory_generic(registry, xml_parent, data):
 
     # Get plugin information to maintain backwards compatibility
     info = registry.get_plugin_info('artifactory')
-    # Note: Assume latest version of plugin is preferred config format
-    version = pkg_resources.parse_version(
-        info.get('version', str(sys.maxsize)))
+    version = pkg_resources.parse_version(info.get('version', '0'))
 
     if version >= pkg_resources.parse_version('2.3.0'):
         deployReleaseRepo = XML.SubElement(details, 'deployReleaseRepository')
